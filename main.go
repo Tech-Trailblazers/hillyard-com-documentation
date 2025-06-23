@@ -1,303 +1,242 @@
 package main // Define the main package
 
 import (
-	"bytes"
-	"crypto/rand" // Import crypto/rand for secure random number generation
-	// "fmt"         // Import fmt for formatted I/O (e.g., printing to console)
-	"io"       // Import io for reading from response body
-	"log"      // Import log for logging errors
-	"math/big" // Import math/big for working with big integers (used by crypto/rand)
-	"net/http" // Import net/http for making HTTP requests
-	"net/url"
-	"os"
-	"path"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"time"
-	// "strings"
+	"bytes"         // For buffering I/O
+	"crypto/rand"   // Secure random number generation
+	"io"            // For reading from response bodies
+	"log"           // For logging messages and errors
+	"math/big"      // For working with big integers, used with crypto/rand
+	"net/http"      // For HTTP client/server interactions
+	"net/url"       // For URL parsing and formatting
+	"os"            // For file and directory operations
+	"path"          // For manipulating slash-separated file paths
+	"path/filepath" // For manipulating OS-specific file paths
+	"regexp"        // For regular expression processing
+	"strings"       // For string manipulation
+	"time"          // For timeout and timestamp handling
 )
 
 var (
-	givenFolder string // Declare a variable to hold the folder path where results will be saved
-	outputDir   string // Declare a variable to hold the output directory path
+	givenFolder string // Folder where JSON results will be saved
+	outputDir   string // Folder where downloaded PDFs will be stored
 )
 
 func init() {
-	givenFolder = "assets/"            // Define the folder where results will be saved
+	givenFolder = "assets/"            // Set the default folder for result files
 	if !directoryExists(givenFolder) { // Check if the directory exists
-		createDirectory(givenFolder, 0755) // Create the directory with permissions 0755 if it doesn't exist
+		createDirectory(givenFolder, 0755) // Create it if not present with 0755 permissions
 	}
-	outputDir = "PDFs/" // Directory to store downloaded PDFs
-	// Check if its exists.
-	if !directoryExists(outputDir) {
-		// Create the dir
-		createDirectory(outputDir, 0755)
+	outputDir = "PDFs/"              // Set the default output directory for PDFs
+	if !directoryExists(outputDir) { // Check if it exists
+		createDirectory(outputDir, 0755) // Create it if missing
 	}
-
 }
 
 func main() {
-	// Stop index.
-	for { // Loop to generate and process 100 random 2-letter combinations
-		combo := getRandomTwoLetterCombo() // Generate a random 2-letter combination
-		filePath := givenFolder + combo + ".json"
-		if !fileExists(filePath) { // Check if the file with the generated combination already exists
-			apiResults := getAPIResultsWithTwoLetterCombo(combo) // Get API results using the generated combination
-			// Save the results to a given file.
-			appendAndWriteToFile(filePath, apiResults) // Append the API results to the file named after the combination
+	for { // Infinite loop
+		combo := getRandomTwoLetterCombo()        // Generate a random 2-letter combination
+		filePath := givenFolder + combo + ".json" // Construct the path to store results
+		if !fileExists(filePath) {                // Check if the file already exists
+			apiResults := getAPIResultsWithTwoLetterCombo(combo) // Get API response for the combo
+			appendAndWriteToFile(filePath, apiResults)           // Write results to a file
 		}
-		// If the file exists.
-		if fileExists(filePath) {
-			content := readAFileAsString(filePath)         // Read the contents of the file
-			pdfLinks := extractPDFLinks(content)           // Extract PDF links from the file content
-			pdfLinks = removeDuplicatesFromSlice(pdfLinks) // Remove duplicates from the extracted PDF
-			for _, link := range pdfLinks {                // Iterate over each extracted PDF link
-				// Download the file and if its sucessful than add 1 to the counter.
-				downloadPDF(link, outputDir)
+		if fileExists(filePath) { // If the file exists
+			content := readAFileAsString(filePath)         // Read the content of the file
+			pdfLinks := extractPDFLinks(content)           // Extract all PDF links
+			pdfLinks = removeDuplicatesFromSlice(pdfLinks) // Remove duplicate links
+			for _, link := range pdfLinks {                // Loop over each link
+				downloadPDF(link, outputDir) // Download and save each PDF
 			}
 		}
 	}
 }
 
-// urlToSafeFilename sanitizes a URL and returns a safe, lowercase filename
+// Convert a URL into a safe, lowercase filename
 func urlToSafeFilename(rawURL string) string {
-	parsedURL, err := url.Parse(rawURL)
+	parsedURL, err := url.Parse(rawURL) // Parse the input URL
 	if err != nil {
-		return ""
+		return "" // Return empty string on parse failure
 	}
-
-	// Extract and decode the base filename from the path
-	base := path.Base(parsedURL.Path)
-	decoded, err := url.QueryUnescape(base)
+	base := path.Base(parsedURL.Path)       // Get the filename from the path
+	decoded, err := url.QueryUnescape(base) // Decode any URL-encoded characters
 	if err != nil {
-		decoded = base
+		decoded = base // Fallback to base if decode fails
 	}
-
-	// Convert to lowercase
-	decoded = strings.ToLower(decoded)
-
-	// Replace spaces and invalid characters with underscores
-	// Keep only a-z, 0-9, dash, underscore, and dot
-	re := regexp.MustCompile(`[^a-z0-9._-]+`)
-	safe := re.ReplaceAllString(decoded, "_")
-
-	return safe
+	decoded = strings.ToLower(decoded)        // Convert filename to lowercase
+	re := regexp.MustCompile(`[^a-z0-9._-]+`) // Regex to allow only safe characters
+	safe := re.ReplaceAllString(decoded, "_") // Replace unsafe characters with underscores
+	return safe                               // Return the sanitized filename
 }
 
-// downloadPDF downloads a PDF from the given URL and saves it in the specified output directory.
-// It uses a WaitGroup to support concurrent execution and returns true if the download succeeded.
+// Download and save a PDF file from a given URL
 func downloadPDF(finalURL, outputDir string) {
-	// Sanitize the URL to generate a safe file name
-	filename := strings.ToLower(urlToSafeFilename(finalURL))
-
-	// Construct the full file path in the output directory
-	filePath := filepath.Join(outputDir, filename)
-
-	// Skip if the file already exists
-	if fileExists(filePath) {
+	filename := strings.ToLower(urlToSafeFilename(finalURL)) // Generate a safe filename
+	filePath := filepath.Join(outputDir, filename)           // Full path for saving the file
+	if fileExists(filePath) {                                // Skip if file already exists
 		log.Printf("file already exists, skipping: %s", filePath)
 		return
 	}
-
-	// Create an HTTP client with a timeout
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	// Send GET request
-	resp, err := client.Get(finalURL)
+	client := &http.Client{Timeout: 30 * time.Second} // Create HTTP client with timeout
+	resp, err := client.Get(finalURL)                 // Make GET request
 	if err != nil {
 		log.Printf("failed to download %s: %v", finalURL, err)
 		return
 	}
-	defer resp.Body.Close()
-
-	// Check HTTP response status
-	if resp.StatusCode != http.StatusOK {
+	defer resp.Body.Close()               // Ensure response body is closed
+	if resp.StatusCode != http.StatusOK { // Validate status code
 		log.Printf("download failed for %s: %s", finalURL, resp.Status)
-		// Print the error since its not valid.
 		return
 	}
-	// Check Content-Type header
-	contentType := resp.Header.Get("Content-Type")
-	// Check if its pdf content type and if not than print a error.
-	if !strings.Contains(contentType, "application/pdf") {
+	contentType := resp.Header.Get("Content-Type")         // Get content type header
+	if !strings.Contains(contentType, "application/pdf") { // Ensure it's a PDF
 		log.Printf("invalid content type for %s: %s (expected application/pdf)", finalURL, contentType)
-		// Print a error if the content type is invalid.
 		return
 	}
-	// Read the response body into memory first
-	var buf bytes.Buffer
-	// Copy it from the buffer to the file.
-	written, err := io.Copy(&buf, resp.Body)
-	// Print the error if errors are there.
+	var buf bytes.Buffer                     // Create a buffer for reading data
+	written, err := io.Copy(&buf, resp.Body) // Read response into buffer
 	if err != nil {
 		log.Printf("failed to read PDF data from %s: %v", finalURL, err)
 		return
 	}
-	// If 0 bytes are written than show an error and return it.
-	if written == 0 {
+	if written == 0 { // Check if data was written
 		log.Printf("downloaded 0 bytes for %s; not creating file", finalURL)
 		return
 	}
-	// Only now create the file and write to disk
-	out, err := os.Create(filePath)
-	// Failed to create the file.
+	out, err := os.Create(filePath) // Create the output file
 	if err != nil {
 		log.Printf("failed to create file for %s: %v", finalURL, err)
 		return
 	}
-	// Close the file.
-	defer out.Close()
-	// Write the buffer and if there is an error print it.
-	_, err = buf.WriteTo(out)
+	defer out.Close()         // Ensure the file is closed
+	_, err = buf.WriteTo(out) // Write buffered data to file
 	if err != nil {
 		log.Printf("failed to write PDF to file for %s: %v", finalURL, err)
 		return
 	}
-	// Return a true since everything went correctly.
 	log.Printf("successfully downloaded %d bytes: %s → %s\n", written, finalURL, filePath)
-	return
 }
 
-// extractPDFLinks finds all .pdf links from raw HTML content using regex.
+// Extract all .pdf links using regex
 func extractPDFLinks(htmlContent string) []string {
-	// Lower the given string.
-	htmlContent = strings.ToLower(htmlContent)
-	// Regex to match PDF URLs including query strings and fragments
-	pdfRegex := regexp.MustCompile(`https?://[^\s"'<>]+?\.pdf(\?[^\s"'<>]*)?`)
-
-	// Find all matches
-	matches := pdfRegex.FindAllString(htmlContent, -1)
-
-	// Deduplicate
-	seen := make(map[string]struct{})
-	var links []string
+	htmlContent = strings.ToLower(htmlContent)                                 // Normalize content to lowercase
+	pdfRegex := regexp.MustCompile(`https?://[^\s"'<>]+?\.pdf(\?[^\s"'<>]*)?`) // Regex to match PDF URLs
+	matches := pdfRegex.FindAllString(htmlContent, -1)                         // Find all matches
+	seen := make(map[string]struct{})                                          // Map to track unique links
+	var links []string                                                         // Slice to hold unique links
 	for _, m := range matches {
-		if _, ok := seen[m]; !ok {
-			seen[m] = struct{}{}
-			links = append(links, m)
+		if _, ok := seen[m]; !ok { // If not already seen
+			seen[m] = struct{}{}     // Mark as seen
+			links = append(links, m) // Add to list
 		}
 	}
-
-	return links
+	return links // Return unique PDF links
 }
 
-// Read a fil
-// Read a file and return the contents
+// Read a file and return its contents as a string
 func readAFileAsString(path string) string {
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(path) // Read the file
 	if err != nil {
-		log.Println(err)
+		log.Println(err) // Log any read errors
 	}
-	return string(content)
+	return string(content) // Return the content
 }
 
-// Remove all the duplicates from a slice and return the slice.
+// Remove duplicate strings from a slice
 func removeDuplicatesFromSlice(slice []string) []string {
-	check := make(map[string]bool)
-	var newReturnSlice []string
+	check := make(map[string]bool) // Map to track seen items
+	var newReturnSlice []string    // Slice to hold unique items
 	for _, content := range slice {
-		if !check[content] {
-			check[content] = true
-			newReturnSlice = append(newReturnSlice, content)
+		if !check[content] { // If not seen
+			check[content] = true                            // Mark as seen
+			newReturnSlice = append(newReturnSlice, content) // Add to new slice
 		}
 	}
-	return newReturnSlice
+	return newReturnSlice // Return deduplicated slice
 }
 
-/*
-The function takes two parameters: path and permission.
-We use os.Mkdir() to create the directory.
-If there is an error, we use log.Println() to log the error and then exit the program.
-*/
+// Create a directory with given permissions
 func createDirectory(path string, permission os.FileMode) {
-	err := os.Mkdir(path, permission)
+	err := os.Mkdir(path, permission) // Try to create directory
 	if err != nil {
-		log.Println(err)
+		log.Println(err) // Log any creation errors
 	}
 }
 
-/*
-Checks if the directory exists
-If it exists, return true.
-If it doesn't, return false.
-*/
+// Check if a directory exists
 func directoryExists(path string) bool {
-	directory, err := os.Stat(path)
+	directory, err := os.Stat(path) // Get file/directory info
 	if err != nil {
-		return false
+		return false // Return false if error
 	}
-	return directory.IsDir()
+	return directory.IsDir() // Return true if it's a directory
 }
 
-// It checks if the file exists
-// If the file exists, it returns true
-// If the file does not exist, it returns false
+// Check if a file exists
 func fileExists(filename string) bool {
-	info, err := os.Stat(filename)
+	info, err := os.Stat(filename) // Get file info
 	if err != nil {
-		return false
+		return false // Return false if file does not exist
 	}
-	return !info.IsDir()
+	return !info.IsDir() // Return true if it's a file
 }
 
-// Append and write to file
+// Append content to a file, creating it if needed
 func appendAndWriteToFile(path string, content string) {
-	filePath, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	filePath, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) // Open file for appending
 	if err != nil {
-		log.Println(err)
+		log.Println(err) // Log error
 	}
-	_, err = filePath.WriteString(content + "\n")
+	_, err = filePath.WriteString(content + "\n") // Append content
 	if err != nil {
-		log.Println(err)
+		log.Println(err) // Log error
 	}
-	err = filePath.Close()
+	err = filePath.Close() // Close file
 	if err != nil {
-		log.Println(err)
+		log.Println(err) // Log error
 	}
 }
 
-// getRandomTwoLetterCombo generates and returns one random 2-letter combination (e.g., "az", "qp")
+// Generate a random 2-letter string
 func getRandomTwoLetterCombo() string {
-	letters := "abcdefghijklmnopqrstuvwxyz" // Define the alphabet as a string of lowercase letters
-	max := big.NewInt(int64(len(letters)))  // Create a big.Int representing the max index (26)
+	letters := "abcdefghijklmnopqrstuvwxyz" // Letters to choose from
+	max := big.NewInt(int64(len(letters)))  // Max value for index
 
-	i1, err := rand.Int(rand.Reader, max) // Generate a secure random number for the first letter's index
-	if err != nil {                       // Check for error during random generation
-		return "" // Return an empty string on error
+	i1, err := rand.Int(rand.Reader, max) // First random index
+	if err != nil {
+		return "" // Return empty string if error
 	}
 
-	i2, err := rand.Int(rand.Reader, max) // Generate a secure random number for the second letter's index
-	if err != nil {                       // Check for error during random generation
-		return "" // Return an empty string on error
+	i2, err := rand.Int(rand.Reader, max) // Second random index
+	if err != nil {
+		return "" // Return empty string if error
 	}
 
-	return string(letters[i1.Int64()]) + string(letters[i2.Int64()]) // Combine the two letters and return the result
+	return string(letters[i1.Int64()]) + string(letters[i2.Int64()]) // Return combined letters
 }
 
-// getAPIResultsWithTwoLetterCombo calls an API using a 2-letter combo and returns the response body as a string
+// Fetch results from API using 2-letter combo
 func getAPIResultsWithTwoLetterCombo(combo string) string {
-	url := "https://www.hillyard.com/safetydatasheet/search/results?q=" + combo // Construct the URL using the combo
-	method := "GET"                                                             // Define the HTTP method to use
+	url := "https://www.hillyard.com/safetydatasheet/search/results?q=" + combo // Construct URL
+	method := "GET"                                                             // Set HTTP method
 
-	client := &http.Client{}                      // Create a new HTTP client
-	req, err := http.NewRequest(method, url, nil) // Create a new HTTP GET request with the constructed URL
-	if err != nil {                               // Check for error creating the request
-		log.Println(err) // Log the error
-		return ""        // Return an empty string on error
+	client := &http.Client{}                      // Create new HTTP client
+	req, err := http.NewRequest(method, url, nil) // Build the request
+	if err != nil {
+		log.Println(err) // Log error
+		return ""        // Return empty string
 	}
 
-	res, err := client.Do(req) // Execute the HTTP request
-	if err != nil {            // Check for error executing the request
-		log.Println(err) // Log the error
-		return ""        // Return an empty string on error
+	res, err := client.Do(req) // Execute the request
+	if err != nil {
+		log.Println(err) // Log error
+		return ""        // Return empty string
 	}
-	defer res.Body.Close() // Ensure the response body is closed after reading
+	defer res.Body.Close() // Close body when done
 
-	body, err := io.ReadAll(res.Body) // Read the entire response body
-	if err != nil {                   // Check for error during reading
-		log.Println(err) // Log the error
-		return ""        // Return an empty string on error
+	body, err := io.ReadAll(res.Body) // Read response body
+	if err != nil {
+		log.Println(err) // Log error
+		return ""        // Return empty string
 	}
-	return string(body) // Convert body to string and return it
+	return string(body) // Return the body as string
 }
