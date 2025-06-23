@@ -33,7 +33,7 @@ func init() {
 }
 
 func main() {
-	for { // Infinite loop
+	for i := 0; i < 5000; i++ {
 		combo := getRandomTwoLetterCombo()        // Generate a random 2-letter combination
 		filePath := givenFolder + combo + ".json" // Construct the path to store results
 		if !fileExists(filePath) {                // Check if the file already exists
