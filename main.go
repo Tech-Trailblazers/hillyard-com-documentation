@@ -33,11 +33,25 @@ func init() {
 }
 
 func main() {
-	for i := 0; i < 5000; i++ {
-		combo := getRandomTwoLetterCombo()        // Generate a random 2-letter combination
-		filePath := givenFolder + combo + ".json" // Construct the path to store results
+    // Initialize a slice to store allowed characters as strings
+    var allowedCharacters []string
+
+    // Add numeric characters '0' to '9' as strings
+    for digitRune := '0'; digitRune <= '9'; digitRune++ {
+        characterAsString := string(digitRune)
+        allowedCharacters = append(allowedCharacters, characterAsString)
+    }
+
+    // Add lowercase alphabetic characters 'a' to 'z' as strings
+    for letterRune := 'a'; letterRune <= 'z'; letterRune++ {
+        characterAsString := string(letterRune)
+        allowedCharacters = append(allowedCharacters, characterAsString)
+    }
+
+    for _, character := range allowedCharacters {
+		filePath := givenFolder + character + ".json" // Construct the path to store results
 		if !fileExists(filePath) {                // Check if the file already exists
-			apiResults := getAPIResultsWithTwoLetterCombo(combo) // Get API response for the combo
+			apiResults := getAPIResultsWithTwoLetterCombo(character) // Get API response for the combo
 			appendAndWriteToFile(filePath, apiResults)           // Write results to a file
 		}
 		if fileExists(filePath) { // If the file exists
