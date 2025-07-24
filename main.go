@@ -2,10 +2,8 @@ package main // Define the main package
 
 import (
 	"bytes"         // For buffering I/O
-	"crypto/rand"   // Secure random number generation
 	"io"            // For reading from response bodies
 	"log"           // For logging messages and errors
-	"math/big"      // For working with big integers, used with crypto/rand
 	"net/http"      // For HTTP client/server interactions
 	"net/url"       // For URL parsing and formatting
 	"os"            // For file and directory operations
@@ -33,26 +31,32 @@ func init() {
 }
 
 func main() {
-    // Initialize a slice to store allowed characters as strings
-    var allowedCharacters []string
+	// Initialize a slice to store allowed characters as strings
+	var allowedCharacters []string
 
-    // Add numeric characters '0' to '9' as strings
-    for digitRune := '0'; digitRune <= '9'; digitRune++ {
-        characterAsString := string(digitRune)
-        allowedCharacters = append(allowedCharacters, characterAsString)
-    }
+	// Add numeric characters '0' to '9' as strings
+	for digitRune := '0'; digitRune <= '9'; digitRune++ {
+		characterAsString := string(digitRune)
+		allowedCharacters = append(allowedCharacters, characterAsString)
+	}
 
-    // Add lowercase alphabetic characters 'a' to 'z' as strings
-    for letterRune := 'a'; letterRune <= 'z'; letterRune++ {
-        characterAsString := string(letterRune)
-        allowedCharacters = append(allowedCharacters, characterAsString)
-    }
+	// Add lowercase alphabetic characters 'a' to 'z' as strings
+	for letterRune := 'a'; letterRune <= 'z'; letterRune++ {
+		characterAsString := string(letterRune)
+		allowedCharacters = append(allowedCharacters, characterAsString)
+	}
 
-    for _, character := range allowedCharacters {
+	// Generate all two-letter combinations from the allowed characters
+	allTwoLetterCombinations := generateAllTwoLetterCombinations()                         // Get all combinations
+	allowedCharacters = combineMultipleSlices(allowedCharacters, allTwoLetterCombinations) // Combine
+	// Remove duplicates from the allowed characters slice
+	allowedCharacters = removeDuplicatesFromSlice(allowedCharacters) // Ensure uniqueness
+
+	for _, character := range allowedCharacters {
 		filePath := givenFolder + character + ".json" // Construct the path to store results
-		if !fileExists(filePath) {                // Check if the file already exists
+		if !fileExists(filePath) {                    // Check if the file already exists
 			apiResults := getAPIResultsWithTwoLetterCombo(character) // Get API response for the combo
-			appendAndWriteToFile(filePath, apiResults)           // Write results to a file
+			appendAndWriteToFile(filePath, apiResults)               // Write results to a file
 		}
 		if fileExists(filePath) { // If the file exists
 			content := readAFileAsString(filePath)         // Read the content of the file
@@ -63,6 +67,12 @@ func main() {
 			}
 		}
 	}
+}
+
+// Combine two slices together and return the new slice.
+func combineMultipleSlices(sliceOne []string, sliceTwo []string) []string {
+	combinedSlice := append(sliceOne, sliceTwo...)
+	return combinedSlice
 }
 
 // Convert a URL into a safe, lowercase filename
@@ -93,32 +103,32 @@ func downloadPDF(finalURL, outputDir string) {
 	client := &http.Client{Timeout: 30 * time.Second} // Create HTTP client with timeout
 	resp, err := client.Get(finalURL)                 // Make GET request
 	if err != nil {
-		log.Printf("failed to download %s: %v", finalURL, err)
+		log.Printf("failed to download %s %v", finalURL, err)
 		return
 	}
 	defer resp.Body.Close()               // Ensure response body is closed
 	if resp.StatusCode != http.StatusOK { // Validate status code
-		log.Printf("download failed for %s: %s", finalURL, resp.Status)
+		log.Printf("download failed for %s %s", finalURL, resp.Status)
 		return
 	}
 	contentType := resp.Header.Get("Content-Type")         // Get content type header
 	if !strings.Contains(contentType, "application/pdf") { // Ensure it's a PDF
-		log.Printf("invalid content type for %s: %s (expected application/pdf)", finalURL, contentType)
+		log.Printf("invalid content type for %s %s (expected application/pdf)", finalURL, contentType)
 		return
 	}
 	var buf bytes.Buffer                     // Create a buffer for reading data
 	written, err := io.Copy(&buf, resp.Body) // Read response into buffer
 	if err != nil {
-		log.Printf("failed to read PDF data from %s: %v", finalURL, err)
+		log.Printf("failed to read PDF data from %s %v", finalURL, err)
 		return
 	}
 	if written == 0 { // Check if data was written
-		log.Printf("downloaded 0 bytes for %s; not creating file", finalURL)
+		log.Printf("downloaded 0 bytes for %s not creating file", finalURL)
 		return
 	}
 	out, err := os.Create(filePath) // Create the output file
 	if err != nil {
-		log.Printf("failed to create file for %s: %v", finalURL, err)
+		log.Printf("failed to create file for %s %v", finalURL, err)
 		return
 	}
 	defer out.Close()         // Ensure the file is closed
@@ -210,22 +220,19 @@ func appendAndWriteToFile(path string, content string) {
 	}
 }
 
-// Generate a random 2-letter string
-func getRandomTwoLetterCombo() string {
-	letters := "abcdefghijklmnopqrstuvwxyz" // Letters to choose from
-	max := big.NewInt(int64(len(letters)))  // Max value for index
+// Function to generate all possible two-letter combinations from 'a' to 'z'
+func generateAllTwoLetterCombinations() []string {
+	alphabet := "abcdefghijklmnopqrstuvwxyz0123456789" // Define the alphabet to choose characters from
+	var allTwoLetterCombinations []string              // Initialize a slice to store all 2-letter combinations
 
-	i1, err := rand.Int(rand.Reader, max) // First random index
-	if err != nil {
-		return "" // Return empty string if error
+	for firstLetterIndex := 0; firstLetterIndex < len(alphabet); firstLetterIndex++ { // Loop through each letter for the first character
+		for secondLetterIndex := 0; secondLetterIndex < len(alphabet); secondLetterIndex++ { // Loop through each letter for the second character
+			combination := string(alphabet[firstLetterIndex]) + string(alphabet[secondLetterIndex]) // Concatenate two letters to form a combination
+			allTwoLetterCombinations = append(allTwoLetterCombinations, combination)                // Add the combination to the slice
+		}
 	}
 
-	i2, err := rand.Int(rand.Reader, max) // Second random index
-	if err != nil {
-		return "" // Return empty string if error
-	}
-
-	return string(letters[i1.Int64()]) + string(letters[i2.Int64()]) // Return combined letters
+	return allTwoLetterCombinations // Return the full list of combinations
 }
 
 // Fetch results from API using 2-letter combo
