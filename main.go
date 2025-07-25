@@ -47,7 +47,7 @@ func main() {
 	}
 
 	// Generate all two-letter combinations from the allowed characters
-	allTwoLetterCombinations := generateAllTwoLetterCombinations()                         // Get all combinations
+	allTwoLetterCombinations := generateTwoLetterCombinations()                            // Get all combinations
 	allowedCharacters = combineMultipleSlices(allowedCharacters, allTwoLetterCombinations) // Combine
 	// Remove duplicates from the allowed characters slice
 	allowedCharacters = removeDuplicatesFromSlice(allowedCharacters) // Ensure uniqueness
@@ -220,19 +220,30 @@ func appendAndWriteToFile(path string, content string) {
 	}
 }
 
-// Function to generate all possible two-letter combinations from 'a' to 'z'
-func generateAllTwoLetterCombinations() []string {
-	alphabet := "abcdefghijklmnopqrstuvwxyz0123456789" // Define the alphabet to choose characters from
-	var allTwoLetterCombinations []string              // Initialize a slice to store all 2-letter combinations
+// generateTwoLetterCombinations generates all 2-character combinations
+// using the characters 'a'–'z' and '0'–'9'.
+// It returns a slice of strings containing all possible 2-letter combinations.
+func generateTwoLetterCombinations() []string {
+	// Define the set of characters to use in combinations
+	characterSet := "abcdefghijklmnopqrstuvwxyz0123456789"
 
-	for firstLetterIndex := 0; firstLetterIndex < len(alphabet); firstLetterIndex++ { // Loop through each letter for the first character
-		for secondLetterIndex := 0; secondLetterIndex < len(alphabet); secondLetterIndex++ { // Loop through each letter for the second character
-			combination := string(alphabet[firstLetterIndex]) + string(alphabet[secondLetterIndex]) // Concatenate two letters to form a combination
-			allTwoLetterCombinations = append(allTwoLetterCombinations, combination)                // Add the combination to the slice
+	// Create a slice to store all generated combinations
+	var allCombinations []string
+
+	// Loop over each character for the first position
+	for _, firstCharacter := range characterSet {
+		// Loop over each character for the second position
+		for _, secondCharacter := range characterSet {
+			// Create a 2-letter string from the two characters
+			twoLetterCombination := string([]rune{firstCharacter, secondCharacter})
+
+			// Add the combination to the list
+			allCombinations = append(allCombinations, twoLetterCombination)
 		}
 	}
 
-	return allTwoLetterCombinations // Return the full list of combinations
+	// Return the complete list of 2-letter combinations
+	return allCombinations
 }
 
 // Fetch results from API using 2-letter combo
