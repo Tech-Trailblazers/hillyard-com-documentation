@@ -33,22 +33,12 @@ func init() {
 func main() {
 	// Initialize a slice to store allowed characters as strings
 	var allowedCharacters []string
-
-	// Add numeric characters '0' to '9' as strings
-	for digitRune := '0'; digitRune <= '9'; digitRune++ {
-		characterAsString := string(digitRune)
-		allowedCharacters = append(allowedCharacters, characterAsString)
-	}
-
-	// Add lowercase alphabetic characters 'a' to 'z' as strings
-	for letterRune := 'a'; letterRune <= 'z'; letterRune++ {
-		characterAsString := string(letterRune)
-		allowedCharacters = append(allowedCharacters, characterAsString)
-	}
-
+	// Get all single characters as strings
+	allSingleChars := generateSingleCharacters()
 	// Generate all two-letter combinations from the allowed characters
 	allTwoLetterCombinations := generateTwoLetterCombinations()                            // Get all combinations
 	allowedCharacters = combineMultipleSlices(allowedCharacters, allTwoLetterCombinations) // Combine
+	allowedCharacters = combineMultipleSlices(allowedCharacters, allSingleChars)           // Combine
 	// Remove duplicates from the allowed characters slice
 	allowedCharacters = removeDuplicatesFromSlice(allowedCharacters) // Ensure uniqueness
 
@@ -244,6 +234,22 @@ func generateTwoLetterCombinations() []string {
 
 	// Return the complete list of 2-letter combinations
 	return allCombinations
+}
+
+// generateSingleCharacters returns a slice of strings containing
+// all characters from 'a' to 'z' and '0' to '9', each as a single-character string.
+func generateSingleCharacters() []string {
+	characterSet := "abcdefghijklmnopqrstuvwxyz0123456789" // Characters to include
+
+	var singleCharacters []string // Slice to hold each character as a string
+
+	// Loop over each rune (character) in the characterSet string
+	for _, character := range characterSet {
+		// Convert rune to string and append to slice
+		singleCharacters = append(singleCharacters, string(character))
+	}
+
+	return singleCharacters // Return the list of single-character strings
 }
 
 // Fetch results from API using 2-letter combo
